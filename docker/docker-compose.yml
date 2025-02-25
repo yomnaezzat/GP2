@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: ess_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ESSCentral
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ess_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -d ESSCentral -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  redis:
+    image: redis:alpine
+    container_name: ess_redis
+    command: redis-server --requirepass Redis123! --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ess_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "Redis123!", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../
+      dockerfile: src/Presentation/ESS.API/Dockerfile
+    container_name: ess_api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=ESSCentral;Username=postgres;Password=postgres
+      - Redis__Configuration=redis:6379,password=Redis123!
+      - AWSS3AccessKey=AKIAW5BDRIQZTEUUNLFA
+      - AWSS3SecretKey=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
+      - AWSS3Region=us-east-1
+      - AWSS3BucketName=mediastore2
+    ports:
+      - "8080:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ess_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  ess_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
